@@ -49,7 +49,7 @@ FlexQL/
 │   ├── flexql_c_api.cpp
 │   ├── flexql_server_main.cpp
 │   └── flexql_repl_main.cpp
-├── FlexQL_Benchmark_Unit_Tests-main/
+├── benchmark_suite/
 │   └── benchmark_flexql.cpp
 ├── data/                  # runtime persisted data (catalog, WAL, table files)
 ├── Makefile

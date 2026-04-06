@@ -23,7 +23,7 @@ CORE_SRCS := \
 
 SERVER_SRCS := $(CORE_SRCS) src/tcp_server.cpp src/flexql_server_main.cpp
 REPL_SRCS := src/flexql_c_api.cpp src/flexql_repl_main.cpp
-BENCH_SRCS := src/flexql_c_api.cpp FlexQL_Benchmark_Unit_Tests-main/benchmark_flexql.cpp
+BENCH_SRCS := src/flexql_c_api.cpp benchmark_suite/benchmark_flexql.cpp
 E2E_SRCS := $(CORE_SRCS) src/tcp_server.cpp src/flexql_c_api.cpp tests/c_api_e2e_demo.cpp
 LAT_SRCS := $(CORE_SRCS) src/tcp_server.cpp src/flexql_c_api.cpp tests/network_latency_1m_demo.cpp
 
