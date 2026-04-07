@@ -102,12 +102,24 @@ $(SERVER_BIN): $(SERVER_SRCS) | $(BUILD_DIR)
 	$(CXX) $(CXXFLAGS) $^ -o $@ $(LDFLAGS) $(LDLIBS)
 
 READLINE_FLAGS := $(shell \
-	if [ -f /opt/homebrew/opt/readline/lib/libreadline.dylib ]; then echo "-L/opt/homebrew/opt/readline/lib -lreadline"; \
-	elif [ -f /opt/homebrew/lib/libreadline.dylib ]; then echo "-L/opt/homebrew/lib -lreadline"; \
-	elif [ -f /usr/local/opt/readline/lib/libreadline.dylib ]; then echo "-L/usr/local/opt/readline/lib -lreadline"; \
-	elif [ -f /usr/local/lib/libreadline.dylib ]; then echo "-L/usr/local/lib -lreadline"; \
-	elif [ -f /usr/lib/libedit.dylib ]; then echo "-ledit"; \
-	else echo "-lreadline"; \
+	if command -v pkg-config >/dev/null 2>&1 && pkg-config --exists readline; then \
+		pkg-config --libs readline; \
+	elif [ -f /opt/homebrew/opt/readline/include/readline/readline.h ] && [ -f /opt/homebrew/opt/readline/lib/libreadline.dylib ]; then \
+		echo "-L/opt/homebrew/opt/readline/lib -lreadline"; \
+	elif [ -f /opt/homebrew/include/readline/readline.h ] && [ -f /opt/homebrew/lib/libreadline.dylib ]; then \
+		echo "-L/opt/homebrew/lib -lreadline"; \
+	elif [ -f /usr/local/opt/readline/include/readline/readline.h ] && [ -f /usr/local/opt/readline/lib/libreadline.dylib ]; then \
+		echo "-L/usr/local/opt/readline/lib -lreadline"; \
+	elif [ -f /usr/local/include/readline/readline.h ] && [ -f /usr/local/lib/libreadline.dylib ]; then \
+		echo "-L/usr/local/lib -lreadline"; \
+	elif [ -f /usr/include/readline/readline.h ] && [ -f /usr/lib/x86_64-linux-gnu/libreadline.so ]; then \
+		echo "-lreadline"; \
+	elif [ -f /usr/include/readline/readline.h ] && [ -f /usr/lib64/libreadline.so ]; then \
+		echo "-lreadline"; \
+	elif [ -f /usr/include/editline/readline.h ] && [ -f /usr/lib/libedit.dylib ]; then \
+		echo "-ledit"; \
+	else \
+		echo ""; \
 	fi)
 
 $(REPL_BIN): $(REPL_SRCS) | $(BUILD_DIR)
