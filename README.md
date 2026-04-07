@@ -18,6 +18,9 @@ Key engine components include:
 - Multithreaded TCP server
 - C API client (`flexql_open`, `flexql_exec`, `flexql_close`, `flexql_free`)
 
+### Architecture Diagram
+![Architecture Diagram](Architecture.png)
+
 ---
 
 ## 2. Folder Structure
@@ -105,18 +108,18 @@ Representative run (10M rows, 4 clients):
 
 - Insert benchmark:
   - Rows inserted: `10,000,000`
-  - Elapsed: `28,318 ms`
-  - Throughput: `353,132 rows/sec`
+  - Elapsed: `4,298 ms`
+  - Throughput: `2,326,663 rows/sec`
 
 - Multi-client SELECT benchmark (full table scan):
   - Clients: `4`
   - Total rows returned: `40,000,000`
-  - Elapsed: `18,660 ms`
+  - Elapsed: `18,757 ms`
 
 - Multi-client WHERE benchmark (primary key equality):
   - Clients: `4`
   - Total rows returned: `4`
-  - Elapsed: `5 ms`
+  - Elapsed: `12,305 ms`
 
 Notes:
 - Results may vary by CPU, disk speed, OS, and background system load.

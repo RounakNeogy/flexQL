@@ -24,17 +24,19 @@ CORE_SRCS := \
 SERVER_SRCS := $(CORE_SRCS) src/tcp_server.cpp src/flexql_server_main.cpp
 REPL_SRCS := src/flexql_c_api.cpp src/flexql_repl_main.cpp
 BENCH_SRCS := src/flexql_c_api.cpp benchmark_suite/benchmark_flexql.cpp
+BENCH_AFTER_SRCS := src/flexql_c_api.cpp benchmark_suite/benchmark_after_insert.cpp
 E2E_SRCS := $(CORE_SRCS) src/tcp_server.cpp src/flexql_c_api.cpp tests/c_api_e2e_demo.cpp
 LAT_SRCS := $(CORE_SRCS) src/tcp_server.cpp src/flexql_c_api.cpp tests/network_latency_1m_demo.cpp
 
 SERVER_BIN := $(BUILD_DIR)/flexql_server
 REPL_BIN := $(BUILD_DIR)/flexql_repl
 BENCH_BIN := $(BUILD_DIR)/benchmark_flexql
+BENCH_AFTER_BIN := $(BUILD_DIR)/benchmark_after_insert
 E2E_BIN := $(BUILD_DIR)/c_api_e2e_demo
 LAT_BIN := $(BUILD_DIR)/network_latency_1m_demo
 
-.PHONY: all server repl benchmark e2e latency unit run-server run-repl run-benchmark \
-	run-benchmark-unit reset-data help clear clean
+.PHONY: all server repl benchmark benchmark-after e2e latency unit run-server run-repl run-benchmark \
+	run-benchmark-after run-benchmark-unit reset-data help clear clean
 
 all: server repl benchmark
 
@@ -46,6 +48,8 @@ server: $(SERVER_BIN)
 repl: $(REPL_BIN)
 
 benchmark: $(BENCH_BIN)
+
+benchmark-after: $(BENCH_AFTER_BIN)
 
 e2e: $(E2E_BIN)
 
@@ -67,6 +71,9 @@ run-repl: $(REPL_BIN)
 
 run-benchmark: $(BENCH_BIN)
 	$(BENCH_BIN) $(ROWS) $(CLIENTS)
+
+run-benchmark-after: $(BENCH_AFTER_BIN)
+	$(BENCH_AFTER_BIN) $(ROWS) $(CLIENTS)
 
 run-benchmark-unit: $(BENCH_BIN)
 	$(BENCH_BIN) --unit-test
@@ -106,6 +113,9 @@ $(REPL_BIN): $(REPL_SRCS) | $(BUILD_DIR)
 	$(CXX) $(CXXFLAGS) $^ -o $@ $(LDFLAGS) $(LDLIBS) $(READLINE_FLAGS)
 
 $(BENCH_BIN): $(BENCH_SRCS) | $(BUILD_DIR)
+	$(CXX) $(CXXFLAGS) $^ -o $@ $(LDFLAGS) $(LDLIBS)
+
+$(BENCH_AFTER_BIN): $(BENCH_AFTER_SRCS) | $(BUILD_DIR)
 	$(CXX) $(CXXFLAGS) $^ -o $@ $(LDFLAGS) $(LDLIBS)
 
 $(E2E_BIN): $(E2E_SRCS) | $(BUILD_DIR)

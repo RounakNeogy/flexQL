@@ -1,0 +1,51 @@
+.build/benchmark_flexql 10000000 4
+Connected to FlexQL server
+Running SQL subset checks plus multi-client insert/select/where benchmarks...
+Target insert rows: 10000000
+Client count: 4
+
+[PASS] CREATE TABLE BIG_USERS (0 ms)
+[PASS] DELETE BIG_USERS (119 ms)
+
+Starting multi-client insertion benchmark for 10000000 rows across 4 clients...
+Insert progress: 10% (1000000/10000000 rows)
+Insert progress: 20% (2000000/10000000 rows)
+Insert progress: 30% (3000000/10000000 rows)
+Insert progress: 40% (4000000/10000000 rows)
+Insert progress: 50% (5000000/10000000 rows)
+Insert progress: 60% (6000000/10000000 rows)
+Insert progress: 70% (7000000/10000000 rows)
+Insert progress: 80% (8000000/10000000 rows)
+Insert progress: 90% (9000000/10000000 rows)
+Insert progress: 100% (10000000/10000000 rows)
+[PASS] Multi-client INSERT benchmark complete
+Rows inserted: 10000000
+Elapsed: 4298 ms
+Throughput: 2326663 rows/sec
+
+Starting multi-client SELECT benchmarks...
+[PASS] Multi-client SELECT benchmark (full table scan) | clients=4 | total_rows=40000000 | elapsed=18757 ms
+[PASS] Multi-client WHERE benchmark (primary key equality) | clients=4 | total_rows=4 | elapsed=12305 ms
+
+[[...Running Unit Tests...]]
+
+[PASS] CREATE TABLE TEST_USERS (0 ms)
+[PASS] DELETE TEST_USERS (1 ms)
+[PASS] INSERT TEST_USERS ID=1 (0 ms)
+[PASS] INSERT TEST_USERS ID=2 (0 ms)
+[PASS] INSERT TEST_USERS ID=3 (0 ms)
+[PASS] INSERT TEST_USERS ID=4 (0 ms)
+[PASS] Basic SELECT * validation
+[PASS] Single-row value validation
+[PASS] Filtered rows validation
+[PASS] Empty result-set validation
+[PASS] CREATE TABLE TEST_ORDERS (0 ms)
+[PASS] DELETE TEST_ORDERS (1 ms)
+[PASS] INSERT TEST_ORDERS ORDER_ID=101 (0 ms)
+[PASS] INSERT TEST_ORDERS ORDER_ID=102 (0 ms)
+[PASS] INSERT TEST_ORDERS ORDER_ID=103 (0 ms)
+[PASS] Join with no matches validation
+[PASS] Invalid SQL should fail
+[PASS] Missing table should fail
+
+Unit Test Summary: 23/23 passed, 0 failed.

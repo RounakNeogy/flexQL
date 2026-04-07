@@ -337,7 +337,11 @@ bool WALManager::flushBatch(std::vector<std::string>& lines, std::vector<uint64_
     }
   }
 
+#ifdef __APPLE__
+  if (::fsync(fd_) != 0) {
+#else
   if (::fdatasync(fd_) != 0) {
+#endif
     return false;
   }
 
@@ -435,7 +439,11 @@ bool WALManager::checkpoint(uint64_t seq) {
     left -= static_cast<size_t>(rc);
   }
 
+#ifdef __APPLE__
+  const bool ok = (::fsync(tmp_fd) == 0);
+#else
   const bool ok = (::fdatasync(tmp_fd) == 0);
+#endif
   ::close(tmp_fd);
   return ok;
 }

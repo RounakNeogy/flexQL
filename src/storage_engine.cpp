@@ -173,7 +173,11 @@ bool StorageEngine::fsyncFile() const {
   if (fd_ < 0) {
     return false;
   }
+#ifdef __APPLE__
+  return ::fsync(fd_) == 0;
+#else
   return ::fdatasync(fd_) == 0;
+#endif
 }
 
 }  // namespace flexql
