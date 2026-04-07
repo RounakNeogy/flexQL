@@ -119,7 +119,6 @@ BPlusTreeNode::BPlusTreeNode(bool leaf) : is_leaf(leaf), next_leaf(UINT32_MAX), 
   keys.reserve(BPlusTree::kMaxKeys + 1);
   if (leaf) {
     values.reserve(BPlusTree::kMaxKeys + 1);
-    varchar_values.reserve(BPlusTree::kMaxKeys + 1);
   } else {
     children.reserve(BPlusTree::kOrder + 1);
   }
@@ -167,26 +166,40 @@ BPlusTree::SplitResult BPlusTree::insertRecursive(uint32_t node_idx,
   BPlusTreeNode& node = node_pool_[node_idx];
 
   if (node.is_leaf) {
-    const auto it = std::lower_bound(node.keys.begin(), node.keys.end(), key);
-    const size_t pos = static_cast<size_t>(it - node.keys.begin());
-
-    node.keys.insert(it, key);
-    node.values.insert(node.values.begin() + static_cast<std::ptrdiff_t>(pos), ptr);
-
-    RowValue::VarcharValue vv{};
-    if (raw_varchar != nullptr) {
-      vv.len = raw_varchar->len;
-      if (vv.len > 0) {
-        std::memcpy(vv.buf, raw_varchar->buf, vv.len);
-      }
-      if (vv.len < 254) {
-        std::memset(vv.buf + vv.len, 0, static_cast<size_t>(254 - vv.len));
+    // Fast-path: if key >= last key, append at end (common for sequential inserts).
+    if (!node.keys.empty() && key >= node.keys.back()) {
+      node.keys.push_back(key);
+      node.values.push_back(ptr);
+      if (raw_varchar != nullptr) {
+        RowValue::VarcharValue vv{};
+        vv.len = raw_varchar->len;
+        if (vv.len > 0) {
+          std::memcpy(vv.buf, raw_varchar->buf, vv.len);
+        }
+        if (vv.len < 254) {
+          std::memset(vv.buf + vv.len, 0, static_cast<size_t>(254 - vv.len));
+        }
+        node.varchar_values.push_back(vv);
       }
     } else {
-      vv.len = 0;
-      std::memset(vv.buf, 0, sizeof(vv.buf));
+      const auto it = std::lower_bound(node.keys.begin(), node.keys.end(), key);
+      const size_t pos = static_cast<size_t>(it - node.keys.begin());
+
+      node.keys.insert(it, key);
+      node.values.insert(node.values.begin() + static_cast<std::ptrdiff_t>(pos), ptr);
+
+      if (raw_varchar != nullptr) {
+        RowValue::VarcharValue vv{};
+        vv.len = raw_varchar->len;
+        if (vv.len > 0) {
+          std::memcpy(vv.buf, raw_varchar->buf, vv.len);
+        }
+        if (vv.len < 254) {
+          std::memset(vv.buf + vv.len, 0, static_cast<size_t>(254 - vv.len));
+        }
+        node.varchar_values.insert(node.varchar_values.begin() + static_cast<std::ptrdiff_t>(pos), vv);
+      }
     }
-    node.varchar_values.insert(node.varchar_values.begin() + static_cast<std::ptrdiff_t>(pos), vv);
 
     if (node.keys.size() <= kMaxKeys) {
       return {false, 0, 0};
@@ -198,12 +211,14 @@ BPlusTree::SplitResult BPlusTree::insertRecursive(uint32_t node_idx,
 
     right.keys.assign(node.keys.begin() + static_cast<std::ptrdiff_t>(mid), node.keys.end());
     right.values.assign(node.values.begin() + static_cast<std::ptrdiff_t>(mid), node.values.end());
-    right.varchar_values.assign(node.varchar_values.begin() + static_cast<std::ptrdiff_t>(mid),
-                                node.varchar_values.end());
+    if (!node.varchar_values.empty()) {
+      right.varchar_values.assign(node.varchar_values.begin() + static_cast<std::ptrdiff_t>(mid),
+                                  node.varchar_values.end());
+      node.varchar_values.resize(mid);
+    }
 
     node.keys.resize(mid);
     node.values.resize(mid);
-    node.varchar_values.resize(mid);
 
     right.next_leaf = node.next_leaf;
     node.next_leaf = right_idx;
@@ -251,8 +266,8 @@ bool BPlusTree::insert(int64_t key, RecordPointer ptr, const RowValue::VarcharVa
     root.keys.push_back(key);
     root.values.push_back(ptr);
 
-    RowValue::VarcharValue vv{};
     if (raw_varchar != nullptr) {
+      RowValue::VarcharValue vv{};
       vv.len = raw_varchar->len;
       if (vv.len > 0) {
         std::memcpy(vv.buf, raw_varchar->buf, vv.len);
@@ -260,11 +275,8 @@ bool BPlusTree::insert(int64_t key, RecordPointer ptr, const RowValue::VarcharVa
       if (vv.len < 254) {
         std::memset(vv.buf + vv.len, 0, static_cast<size_t>(254 - vv.len));
       }
-    } else {
-      vv.len = 0;
-      std::memset(vv.buf, 0, sizeof(vv.buf));
+      root.varchar_values.push_back(vv);
     }
-    root.varchar_values.push_back(vv);
     return true;
   }
 

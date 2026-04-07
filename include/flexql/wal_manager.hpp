@@ -77,8 +77,8 @@ class WALManager {
 
   static constexpr uint8_t kRecordInsert = 1;
   static constexpr uint8_t kRecordCheckpoint = 2;
-  static constexpr uint32_t kFlushByteThreshold = 4U * 1024U * 1024U;
-  static constexpr uint32_t kFlushEntryThreshold = 4096U;
+  static constexpr uint32_t kFlushByteThreshold = 16U * 1024U * 1024U;
+  static constexpr uint32_t kFlushEntryThreshold = 16384U;
 };
 
 }  // namespace flexql

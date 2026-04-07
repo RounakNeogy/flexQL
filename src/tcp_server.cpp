@@ -28,7 +28,7 @@ namespace flexql {
 
 namespace {
 
-constexpr size_t kRowBatchFlushBytes = 1U << 20;
+constexpr size_t kRowBatchFlushBytes = 4U << 20;  // 4MB batch for fewer socket writes
 
 bool writeAll(int fd, const void* data, size_t len) {
   const uint8_t* ptr = static_cast<const uint8_t*>(data);
@@ -393,6 +393,8 @@ bool FlexQLServer::handleInsert(const QueryAST& ast, std::string& error) {
     for (const auto& vals : ast.insert_rows) {
       const uint64_t pk_key = encodePrimaryKey(table->schema.columns[0].type, vals[0]);
       const bool duplicate_in_statement = !statement_pk_seen.insert(pk_key).second;
+      // Skip the expensive B+ tree lookup when the runtime index is empty;
+      // the in-statement uniqueness check is sufficient in that case.
       const bool duplicate_existing = !runtime_pk_empty && engine_.primaryKeyExists(*table, table_id, vals[0]);
       if (duplicate_in_statement || duplicate_existing) {
         error = "duplicate primary key";
@@ -481,6 +483,7 @@ bool FlexQLServer::rowCallback(void* ctx, const RowValue* projected_values, size
     return false;
   }
 
+  // Compute payload size
   size_t payload_len = sizeof(uint16_t);
   for (size_t i = 0; i < projected_count; ++i) {
     const ColType t = qctx->projected_types[i];
@@ -491,48 +494,49 @@ bool FlexQLServer::rowCallback(void* ctx, const RowValue* projected_values, size
     }
   }
 
-  qctx->row_payload_buffer.assign(payload_len, 0);
+  // Write frame header + payload directly into pending_wire_buffer
+  const size_t frame_size = 5 + payload_len;
+  const size_t old_size = qctx->pending_wire_buffer.size();
+  qctx->pending_wire_buffer.resize(old_size + frame_size);
+  uint8_t* dest = qctx->pending_wire_buffer.data() + old_size;
+
+  const uint32_t net_len = htonl(static_cast<uint32_t>(payload_len));
+  std::memcpy(dest, &net_len, sizeof(uint32_t));
+  dest[4] = static_cast<uint8_t>(MessageType::ROW);
+  dest += 5;
+
   uint16_t col_count = static_cast<uint16_t>(projected_count);
-  std::memcpy(qctx->row_payload_buffer.data(), &col_count, sizeof(uint16_t));
+  std::memcpy(dest, &col_count, sizeof(uint16_t));
   size_t cursor = sizeof(uint16_t);
 
   for (size_t i = 0; i < projected_count; ++i) {
     const ColType t = qctx->projected_types[i];
-    qctx->row_payload_buffer[cursor++] = static_cast<uint8_t>(t);
+    dest[cursor++] = static_cast<uint8_t>(t);
     if (t == ColType::VARCHAR) {
       const uint16_t len = projected_values[i].as_varchar.len;
-      std::memcpy(qctx->row_payload_buffer.data() + cursor, &len, sizeof(uint16_t));
+      std::memcpy(dest + cursor, &len, sizeof(uint16_t));
       cursor += sizeof(uint16_t);
       if (len > 0) {
-        std::memcpy(qctx->row_payload_buffer.data() + cursor, projected_values[i].as_varchar.buf, len);
+        std::memcpy(dest + cursor, projected_values[i].as_varchar.buf, len);
         cursor += len;
       }
     } else if (t == ColType::DECIMAL) {
-      std::memcpy(qctx->row_payload_buffer.data() + cursor, &projected_values[i].as_double, 8);
+      std::memcpy(dest + cursor, &projected_values[i].as_double, 8);
       cursor += 8;
     } else if (t == ColType::DATETIME) {
-      std::memcpy(qctx->row_payload_buffer.data() + cursor, &projected_values[i].as_datetime, 8);
+      std::memcpy(dest + cursor, &projected_values[i].as_datetime, 8);
       cursor += 8;
     } else {
-      std::memcpy(qctx->row_payload_buffer.data() + cursor, &projected_values[i].as_int, 8);
+      std::memcpy(dest + cursor, &projected_values[i].as_int, 8);
       cursor += 8;
     }
   }
-
-  const uint32_t net_len = htonl(static_cast<uint32_t>(qctx->row_payload_buffer.size()));
-  const size_t old_size = qctx->pending_wire_buffer.size();
-  qctx->pending_wire_buffer.resize(old_size + 5 + qctx->row_payload_buffer.size());
-  std::memcpy(qctx->pending_wire_buffer.data() + old_size, &net_len, sizeof(uint32_t));
-  qctx->pending_wire_buffer[old_size + 4] = static_cast<uint8_t>(MessageType::ROW);
-  std::memcpy(qctx->pending_wire_buffer.data() + old_size + 5,
-              qctx->row_payload_buffer.data(),
-              qctx->row_payload_buffer.size());
 
   if (qctx->pending_wire_buffer.size() >= kRowBatchFlushBytes && !flushPendingRows(*qctx)) {
     return false;
   }
   qctx->rows_sent += 1;
-  if ((qctx->rows_sent & 1023ULL) == 0) {
+  if ((qctx->rows_sent & 65535ULL) == 0) {
     if (!flushPendingRows(*qctx)) {
       return false;
     }
@@ -562,6 +566,13 @@ bool FlexQLServer::handleSelect(const QueryAST& ast, int client_fd, std::string&
     if (!engine_.flushTable(*table, table_id)) {
       error = "failed to flush table before select";
       return false;
+    }
+  }
+  // Lazy B+ tree rebuild: only for WHERE queries that need the index.
+  // Full table scans bypass the B+ tree entirely.
+  if (ast.where.has_value() && ast.where->col_index == 0 && ast.where->op_code == CompareOp::EQ) {
+    if (engine_.primaryKeyRuntimeEmpty(table_id) && table->storage->pageCount() > 0) {
+      engine_.warmupTableRuntimeFromDisk(*table, table_id);
     }
   }
 

@@ -134,10 +134,10 @@ bool InsertBuffer::flush(Table& table,
 }
 
 bool InsertBuffer::flush_locked(Table& table,
-                                BufferPool& buffer_pool,
-                                uint32_t table_id,
-                                RowPlacementCallback callback,
-                                void* callback_ctx) {
+                                 BufferPool& buffer_pool,
+                                 uint32_t table_id,
+                                 RowPlacementCallback callback,
+                                 void* callback_ctx) {
   if (buffer_.empty()) {
     return true;
   }
@@ -146,10 +146,8 @@ bool InsertBuffer::flush_locked(Table& table,
     return false;
   }
 
-  buffer_pool.flushAll();
-  if (!table.storage->fsyncFile()) {
-    return false;
-  }
+  // Durability is deferred to the checkpoint mechanism (every kCheckpointBytes)
+  // to avoid expensive per-flush fsync calls during high-throughput inserts.
 
   buffer_.clear();
   buffer_index_.clear();

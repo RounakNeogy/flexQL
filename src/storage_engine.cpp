@@ -13,7 +13,7 @@ namespace flexql {
 Page::Page()
     : page_id(0), row_count(0), free_space_offset(0), row_size_bytes(0), reserved{0}, body{} {}
 
-StorageEngine::StorageEngine() : fd_(-1), read_count_(0), write_count_(0) {}
+StorageEngine::StorageEngine() : fd_(-1), read_count_(0), write_count_(0), cached_page_count_(0) {}
 
 StorageEngine::~StorageEngine() {
   if (fd_ >= 0) {
@@ -36,6 +36,14 @@ bool StorageEngine::open(const std::string& filepath) {
   }
 
   filepath_ = filepath;
+
+  // Cache page count from file size to avoid repeated fstat calls.
+  struct stat st;
+  if (::fstat(fd_, &st) == 0 && st.st_size >= 0) {
+    cached_page_count_.store(
+        static_cast<uint32_t>(st.st_size / static_cast<off_t>(kPageSizeBytes)),
+        std::memory_order_relaxed);
+  }
   return true;
 }
 
@@ -88,6 +96,19 @@ bool StorageEngine::readPage(uint32_t page_id, Page& out_page) const {
   return ok;
 }
 
+bool StorageEngine::readPages(uint32_t start_page_id, uint32_t count, void* buffer) const {
+  if (fd_ < 0 || count == 0) {
+    return false;
+  }
+  const uint64_t offset = static_cast<uint64_t>(start_page_id) * kPageSizeBytes;
+  const size_t bytes = static_cast<size_t>(count) * kPageSizeBytes;
+  const bool ok = read_full(buffer, bytes, offset);
+  if (ok) {
+    read_count_.fetch_add(count, std::memory_order_relaxed);
+  }
+  return ok;
+}
+
 bool StorageEngine::writePage(uint32_t page_id, const Page& page) const {
   if (fd_ < 0) {
     return false;
@@ -101,20 +122,15 @@ bool StorageEngine::writePage(uint32_t page_id, const Page& page) const {
 }
 
 uint32_t StorageEngine::pageCount() const {
-  if (fd_ < 0) {
-    return 0;
-  }
+  return cached_page_count_.load(std::memory_order_relaxed);
+}
 
-  struct stat st;
-  if (::fstat(fd_, &st) != 0 || st.st_size < 0) {
-    return 0;
-  }
-
-  return static_cast<uint32_t>(st.st_size / static_cast<off_t>(kPageSizeBytes));
+void StorageEngine::setCachedPageCount(uint32_t count) {
+  cached_page_count_.store(count, std::memory_order_relaxed);
 }
 
 uint32_t StorageEngine::allocateNewPage(uint16_t row_size_bytes) {
-  const uint32_t page_id = pageCount();
+  const uint32_t page_id = cached_page_count_.load(std::memory_order_relaxed);
   Page page;
   page.page_id = page_id;
   page.row_count = 0;
@@ -124,7 +140,20 @@ uint32_t StorageEngine::allocateNewPage(uint16_t row_size_bytes) {
   if (!writePage(page_id, page)) {
     return UINT32_MAX;
   }
+  cached_page_count_.fetch_add(1, std::memory_order_relaxed);
   return page_id;
+}
+
+uint32_t StorageEngine::allocateNewPages(uint16_t row_size_bytes, uint32_t count) {
+  if (count == 0) return UINT32_MAX;
+  const uint32_t first_page_id = cached_page_count_.load(std::memory_order_relaxed);
+  // Extend file in one ftruncate to avoid per-page pwrite for empty pages.
+  const uint64_t new_size = static_cast<uint64_t>(first_page_id + count) * kPageSizeBytes;
+  if (::ftruncate(fd_, static_cast<off_t>(new_size)) != 0) {
+    return UINT32_MAX;
+  }
+  cached_page_count_.store(first_page_id + count, std::memory_order_relaxed);
+  return first_page_id;
 }
 
 uint64_t StorageEngine::readCount() const {
@@ -144,7 +173,7 @@ bool StorageEngine::fsyncFile() const {
   if (fd_ < 0) {
     return false;
   }
-  return ::fsync(fd_) == 0;
+  return ::fdatasync(fd_) == 0;
 }
 
 }  // namespace flexql

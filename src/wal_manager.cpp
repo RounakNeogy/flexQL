@@ -265,25 +265,33 @@ uint64_t WALManager::appendInsert(const std::string& table_name, const Schema& s
 }
 
 uint64_t WALManager::appendInsertBatch(const std::string& table_name,
-                                       const Schema& schema,
-                                       const std::vector<Row>& rows) {
+                                        const Schema& schema,
+                                        const std::vector<Row>& rows) {
   if (rows.empty()) {
     return lastFlushedSeq();
   }
 
+  // Concatenate all row records into a single string to avoid per-row allocations.
+  std::string combined;
+  combined.reserve(rows.size() * 64);
+  uint64_t first_seq = 0;
   uint64_t last_seq = 0;
   {
     DebugLockLevelGuard level_guard(LockLevel::WAL);
     std::lock_guard<std::mutex> lock(mtx_);
-    active_buffer_.reserve(active_buffer_.size() + rows.size());
-    active_seqs_.reserve(active_seqs_.size() + rows.size());
-    for (const Row& row : rows) {
-      const uint64_t seq = nextSeq();
-      active_buffer_.push_back(formatInsertBinary(seq, table_name, schema, row));
-      active_seqs_.push_back(seq);
-      active_bytes_ += active_buffer_.back().size();
-      last_seq = seq;
+    first_seq = nextSeq();
+    // Reserve seq range
+    for (size_t i = 1; i < rows.size(); ++i) {
+      nextSeq();
     }
+    last_seq = first_seq + rows.size() - 1;
+
+    for (size_t i = 0; i < rows.size(); ++i) {
+      combined.append(formatInsertBinary(first_seq + i, table_name, schema, rows[i]));
+    }
+    active_buffer_.push_back(std::move(combined));
+    active_seqs_.push_back(last_seq);
+    active_bytes_ += active_buffer_.back().size();
     if (active_buffer_.size() >= kFlushEntryThreshold || active_bytes_ >= kFlushByteThreshold) {
       force_flush_ = true;
     }
@@ -329,7 +337,7 @@ bool WALManager::flushBatch(std::vector<std::string>& lines, std::vector<uint64_
     }
   }
 
-  if (::fsync(fd_) != 0) {
+  if (::fdatasync(fd_) != 0) {
     return false;
   }
 
@@ -427,7 +435,7 @@ bool WALManager::checkpoint(uint64_t seq) {
     left -= static_cast<size_t>(rc);
   }
 
-  const bool ok = (::fsync(tmp_fd) == 0);
+  const bool ok = (::fdatasync(tmp_fd) == 0);
   ::close(tmp_fd);
   return ok;
 }
