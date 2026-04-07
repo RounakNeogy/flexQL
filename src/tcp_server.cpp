@@ -8,8 +8,8 @@
 #include <sys/types.h>
 #include <unistd.h>
 
-#include <cerrno>
 #include <algorithm>
+#include <cerrno>
 #include <cstring>
 #include <filesystem>
 #include <fstream>
@@ -28,10 +28,11 @@ namespace flexql {
 
 namespace {
 
-constexpr size_t kRowBatchFlushBytes = 4U << 20;  // 4MB batch for fewer socket writes
+constexpr size_t kRowBatchFlushBytes =
+    4U << 20; // 4MB batch for fewer socket writes
 
-bool writeAll(int fd, const void* data, size_t len) {
-  const uint8_t* ptr = static_cast<const uint8_t*>(data);
+bool writeAll(int fd, const void *data, size_t len) {
+  const uint8_t *ptr = static_cast<const uint8_t *>(data);
   size_t written = 0;
   while (written < len) {
     const ssize_t rc = ::send(fd, ptr + written, len - written, 0);
@@ -49,8 +50,8 @@ bool writeAll(int fd, const void* data, size_t len) {
   return true;
 }
 
-bool readAll(int fd, void* data, size_t len) {
-  uint8_t* ptr = static_cast<uint8_t*>(data);
+bool readAll(int fd, void *data, size_t len) {
+  uint8_t *ptr = static_cast<uint8_t *>(data);
   size_t got = 0;
   while (got < len) {
     const ssize_t rc = ::recv(fd, ptr + got, len - got, 0);
@@ -68,7 +69,8 @@ bool readAll(int fd, void* data, size_t len) {
   return true;
 }
 
-bool sendFrame(int fd, MessageType type, const uint8_t* payload, uint32_t payload_len) {
+bool sendFrame(int fd, MessageType type, const uint8_t *payload,
+               uint32_t payload_len) {
   const uint32_t net_len = htonl(payload_len);
   std::vector<uint8_t> frame(sizeof(uint32_t) + 1 + payload_len, 0);
   std::memcpy(frame.data(), &net_len, sizeof(uint32_t));
@@ -79,8 +81,9 @@ bool sendFrame(int fd, MessageType type, const uint8_t* payload, uint32_t payloa
   return writeAll(fd, frame.data(), frame.size());
 }
 
-bool sendErrorFrame(int fd, const std::string& err) {
-  return sendFrame(fd, MessageType::ERROR, reinterpret_cast<const uint8_t*>(err.data()),
+bool sendErrorFrame(int fd, const std::string &err) {
+  return sendFrame(fd, MessageType::ERROR,
+                   reinterpret_cast<const uint8_t *>(err.data()),
                    static_cast<uint32_t>(err.size()));
 }
 
@@ -94,7 +97,8 @@ bool consumeAbortFrameIfAvailable(int fd) {
   }
 
   uint8_t header[5];
-  const ssize_t got = ::recv(fd, header, sizeof(header), MSG_PEEK | MSG_DONTWAIT);
+  const ssize_t got =
+      ::recv(fd, header, sizeof(header), MSG_PEEK | MSG_DONTWAIT);
   if (got < static_cast<ssize_t>(sizeof(header))) {
     return false;
   }
@@ -112,9 +116,9 @@ bool consumeAbortFrameIfAvailable(int fd) {
   return consumed == static_cast<ssize_t>(total);
 }
 
-bool sendSchemaFrame(int fd, const std::vector<std::string>& names) {
+bool sendSchemaFrame(int fd, const std::vector<std::string> &names) {
   size_t payload_len = sizeof(uint16_t);
-  for (const auto& name : names) {
+  for (const auto &name : names) {
     payload_len += sizeof(uint16_t) + name.size();
   }
   if (payload_len > UINT32_MAX) {
@@ -125,7 +129,7 @@ bool sendSchemaFrame(int fd, const std::vector<std::string>& names) {
   uint16_t col_count = static_cast<uint16_t>(names.size());
   std::memcpy(payload.data(), &col_count, sizeof(uint16_t));
   size_t cursor = sizeof(uint16_t);
-  for (const auto& name : names) {
+  for (const auto &name : names) {
     const uint16_t len = static_cast<uint16_t>(name.size());
     std::memcpy(payload.data() + cursor, &len, sizeof(uint16_t));
     cursor += sizeof(uint16_t);
@@ -134,7 +138,8 @@ bool sendSchemaFrame(int fd, const std::vector<std::string>& names) {
       cursor += len;
     }
   }
-  return sendFrame(fd, MessageType::SCHEMA, payload.data(), static_cast<uint32_t>(payload.size()));
+  return sendFrame(fd, MessageType::SCHEMA, payload.data(),
+                   static_cast<uint32_t>(payload.size()));
 }
 
 size_t encodedValueSize(ColType type) {
@@ -146,9 +151,11 @@ struct CollectRowsContext {
   size_t projected_count;
 };
 
-bool collectRowsCallback(void* ctx, const RowValue* projected_values, size_t projected_count) {
-  auto* c = static_cast<CollectRowsContext*>(ctx);
-  if (c == nullptr || projected_values == nullptr || projected_count != c->projected_count) {
+bool collectRowsCallback(void *ctx, const RowValue *projected_values,
+                         size_t projected_count) {
+  auto *c = static_cast<CollectRowsContext *>(ctx);
+  if (c == nullptr || projected_values == nullptr ||
+      projected_count != c->projected_count) {
     return false;
   }
   std::vector<RowValue> row(projected_count);
@@ -159,37 +166,48 @@ bool collectRowsCallback(void* ctx, const RowValue* projected_values, size_t pro
   return true;
 }
 
-int compareRowValue(ColType type, const RowValue& a, const RowValue& b) {
+int compareRowValue(ColType type, const RowValue &a, const RowValue &b) {
   if (type == ColType::INT || type == ColType::DATETIME) {
     const int64_t av = (type == ColType::INT) ? a.as_int : a.as_datetime;
     const int64_t bv = (type == ColType::INT) ? b.as_int : b.as_datetime;
-    if (av < bv) return -1;
-    if (av > bv) return 1;
+    if (av < bv)
+      return -1;
+    if (av > bv)
+      return 1;
     return 0;
   }
   if (type == ColType::DECIMAL) {
-    if (a.as_double < b.as_double) return -1;
-    if (a.as_double > b.as_double) return 1;
+    if (a.as_double < b.as_double)
+      return -1;
+    if (a.as_double > b.as_double)
+      return 1;
     return 0;
   }
   const uint16_t al = a.as_varchar.len;
   const uint16_t bl = b.as_varchar.len;
   const uint16_t ml = (al < bl) ? al : bl;
-  const int cmp = (ml > 0) ? std::memcmp(a.as_varchar.buf, b.as_varchar.buf, ml) : 0;
-  if (cmp != 0) return cmp;
-  if (al < bl) return -1;
-  if (al > bl) return 1;
+  const int cmp =
+      (ml > 0) ? std::memcmp(a.as_varchar.buf, b.as_varchar.buf, ml) : 0;
+  if (cmp != 0)
+    return cmp;
+  if (al < bl)
+    return -1;
+  if (al > bl)
+    return 1;
   return 0;
 }
 
 std::string colTypeToString(ColType t) {
-  if (t == ColType::INT) return "INT";
-  if (t == ColType::DECIMAL) return "DECIMAL";
-  if (t == ColType::VARCHAR) return "VARCHAR";
+  if (t == ColType::INT)
+    return "INT";
+  if (t == ColType::DECIMAL)
+    return "DECIMAL";
+  if (t == ColType::VARCHAR)
+    return "VARCHAR";
   return "DATETIME";
 }
 
-bool stringToColType(const std::string& s, ColType& out) {
+bool stringToColType(const std::string &s, ColType &out) {
   if (s == "INT") {
     out = ColType::INT;
     return true;
@@ -209,25 +227,15 @@ bool stringToColType(const std::string& s, ColType& out) {
   return false;
 }
 
-}  // namespace
+} // namespace
 
 FlexQLServer::FlexQLServer(int port, size_t worker_threads)
-    : port_(port),
-      listen_fd_(-1),
-      running_(false),
-      accept_thread_(),
+    : port_(port), listen_fd_(-1), running_(false), accept_thread_(),
       workers_(worker_threads == 0 ? ThreadPool() : ThreadPool(worker_threads)),
-      db_(),
-      buffer_pool_(131072),
-      engine_(buffer_pool_),
-      parser_(),
-      catalog_mutex_(),
-      table_ids_(),
-      next_table_id_(1) {}
+      db_(), buffer_pool_(131072), engine_(buffer_pool_), parser_(),
+      catalog_mutex_(), table_ids_(), next_table_id_(1) {}
 
-FlexQLServer::~FlexQLServer() {
-  stop();
-}
+FlexQLServer::~FlexQLServer() { stop(); }
 
 bool FlexQLServer::isRunning() const {
   return running_.load(std::memory_order_acquire);
@@ -248,7 +256,8 @@ bool FlexQLServer::start() {
   }
 
   int on = 1;
-  if (::setsockopt(listen_fd_, SOL_SOCKET, SO_REUSEADDR, &on, sizeof(on)) != 0) {
+  if (::setsockopt(listen_fd_, SOL_SOCKET, SO_REUSEADDR, &on, sizeof(on)) !=
+      0) {
     ::close(listen_fd_);
     listen_fd_ = -1;
     return false;
@@ -259,7 +268,8 @@ bool FlexQLServer::start() {
   addr.sin_family = AF_INET;
   addr.sin_port = htons(static_cast<uint16_t>(port_));
   addr.sin_addr.s_addr = htonl(INADDR_ANY);
-  if (::bind(listen_fd_, reinterpret_cast<sockaddr*>(&addr), sizeof(addr)) != 0) {
+  if (::bind(listen_fd_, reinterpret_cast<sockaddr *>(&addr), sizeof(addr)) !=
+      0) {
     ::close(listen_fd_);
     listen_fd_ = -1;
     return false;
@@ -291,13 +301,26 @@ void FlexQLServer::stop() {
   }
   workers_.waitIdle();
   workers_.shutdown();
+
+  std::vector<std::pair<uint32_t, Table *>> engines_tables;
+  {
+    std::lock_guard<std::mutex> lock(catalog_mutex_);
+    for (const auto &kv : table_ids_) {
+      Table *t = const_cast<Database &>(db_).getTable(kv.first);
+      if (t != nullptr) {
+        engines_tables.emplace_back(kv.second, t);
+      }
+    }
+  }
+  engine_.shutdown(engines_tables);
 }
 
 void FlexQLServer::acceptLoop() {
   while (isRunning()) {
     sockaddr_in peer{};
     socklen_t peer_len = sizeof(peer);
-    const int fd = ::accept(listen_fd_, reinterpret_cast<sockaddr*>(&peer), &peer_len);
+    const int fd =
+        ::accept(listen_fd_, reinterpret_cast<sockaddr *>(&peer), &peer_len);
     if (fd < 0) {
       if (errno == EINTR) {
         continue;
@@ -314,12 +337,13 @@ void FlexQLServer::acceptLoop() {
   }
 }
 
-std::unordered_map<std::string, const Table*> FlexQLServer::snapshotTables() const {
-  std::unordered_map<std::string, const Table*> out;
+std::unordered_map<std::string, const Table *>
+FlexQLServer::snapshotTables() const {
+  std::unordered_map<std::string, const Table *> out;
   std::lock_guard<std::mutex> lock(catalog_mutex_);
   out.reserve(table_ids_.size());
-  for (const auto& kv : table_ids_) {
-    Table* t = const_cast<Database&>(db_).getTable(kv.first);
+  for (const auto &kv : table_ids_) {
+    Table *t = const_cast<Database &>(db_).getTable(kv.first);
     if (t != nullptr) {
       out.emplace(kv.first, t);
     }
@@ -327,26 +351,27 @@ std::unordered_map<std::string, const Table*> FlexQLServer::snapshotTables() con
   return out;
 }
 
-bool FlexQLServer::resolveTable(const std::string& name, Table*& out_table, uint32_t& out_table_id) const {
+bool FlexQLServer::resolveTable(const std::string &name, Table *&out_table,
+                                uint32_t &out_table_id) const {
   std::lock_guard<std::mutex> lock(catalog_mutex_);
   const auto it = table_ids_.find(name);
   if (it == table_ids_.end()) {
     return false;
   }
-  out_table = const_cast<Database&>(db_).getTable(name);
+  out_table = const_cast<Database &>(db_).getTable(name);
   out_table_id = it->second;
   return out_table != nullptr;
 }
 
-bool FlexQLServer::handleCreate(const QueryAST& ast, std::string& error) {
+bool FlexQLServer::handleCreate(const QueryAST &ast, std::string &error) {
   if (ast.create_if_not_exists) {
-    Table* existing = db_.getTable(ast.table_name);
+    Table *existing = db_.getTable(ast.table_name);
     if (existing != nullptr) {
       return true;
     }
   }
   Schema schema(ast.create_columns.size());
-  for (const auto& col : ast.create_columns) {
+  for (const auto &col : ast.create_columns) {
     if (!schema.add_column(col.name, col.type)) {
       error = "duplicate column name: " + col.name;
       return false;
@@ -356,12 +381,13 @@ bool FlexQLServer::handleCreate(const QueryAST& ast, std::string& error) {
     error = "failed to create table: " + ast.table_name;
     return false;
   }
-  Table* table = db_.getTable(ast.table_name);
+  Table *table = db_.getTable(ast.table_name);
   if (table == nullptr) {
     error = "failed to resolve table after create";
     return false;
   }
-  const uint32_t table_id = next_table_id_.fetch_add(1, std::memory_order_relaxed);
+  const uint32_t table_id =
+      next_table_id_.fetch_add(1, std::memory_order_relaxed);
   {
     std::lock_guard<std::mutex> lock(catalog_mutex_);
     table_ids_[ast.table_name] = table_id;
@@ -374,8 +400,8 @@ bool FlexQLServer::handleCreate(const QueryAST& ast, std::string& error) {
   return true;
 }
 
-bool FlexQLServer::handleInsert(const QueryAST& ast, std::string& error) {
-  Table* table = nullptr;
+bool FlexQLServer::handleInsert(const QueryAST &ast, std::string &error) {
+  Table *table = nullptr;
   uint32_t table_id = 0;
   if (!resolveTable(ast.table_name, table, table_id)) {
     error = "unknown table: " + ast.table_name;
@@ -383,19 +409,24 @@ bool FlexQLServer::handleInsert(const QueryAST& ast, std::string& error) {
   }
 
   std::unordered_set<uint64_t> statement_pk_seen;
-  statement_pk_seen.reserve(ast.insert_rows.empty() ? 1 : ast.insert_rows.size());
+  statement_pk_seen.reserve(ast.insert_rows.empty() ? 1
+                                                    : ast.insert_rows.size());
   const bool runtime_pk_empty = engine_.primaryKeyRuntimeEmpty(table_id);
 
   if (!ast.insert_rows.empty()) {
     static constexpr size_t kBulkStatementThreshold = 4096;
     std::vector<Row> batch_rows;
     batch_rows.reserve(ast.insert_rows.size());
-    for (const auto& vals : ast.insert_rows) {
-      const uint64_t pk_key = encodePrimaryKey(table->schema.columns[0].type, vals[0]);
-      const bool duplicate_in_statement = !statement_pk_seen.insert(pk_key).second;
+    for (const auto &vals : ast.insert_rows) {
+      const uint64_t pk_key =
+          encodePrimaryKey(table->schema.columns[0].type, vals[0]);
+      const bool duplicate_in_statement =
+          !statement_pk_seen.insert(pk_key).second;
       // Skip the expensive B+ tree lookup when the runtime index is empty;
       // the in-statement uniqueness check is sufficient in that case.
-      const bool duplicate_existing = !runtime_pk_empty && engine_.primaryKeyExists(*table, table_id, vals[0]);
+      const bool duplicate_existing =
+          !runtime_pk_empty &&
+          engine_.primaryKeyExists(*table, table_id, vals[0]);
       if (duplicate_in_statement || duplicate_existing) {
         error = "duplicate primary key";
         return false;
@@ -405,15 +436,17 @@ bool FlexQLServer::handleInsert(const QueryAST& ast, std::string& error) {
       row.expiration_timestamp = ast.insert_expiration_timestamp;
       batch_rows.emplace_back(std::move(row));
     }
-    const bool ok = (batch_rows.size() >= kBulkStatementThreshold)
-                        ? engine_.executeBulkInsert(*table, table_id, batch_rows)
-                        : engine_.executeInsertBatch(*table, table_id, batch_rows);
+    const bool ok =
+        (batch_rows.size() >= kBulkStatementThreshold)
+            ? engine_.executeBulkInsert(*table, table_id, batch_rows)
+            : engine_.executeInsertBatch(*table, table_id, batch_rows);
     if (!ok) {
       error = "insert failed";
       return false;
     }
   } else {
-    if (!runtime_pk_empty && engine_.primaryKeyExists(*table, table_id, ast.insert_values[0])) {
+    if (!runtime_pk_empty &&
+        engine_.primaryKeyExists(*table, table_id, ast.insert_values[0])) {
       error = "duplicate primary key";
       return false;
     }
@@ -428,8 +461,8 @@ bool FlexQLServer::handleInsert(const QueryAST& ast, std::string& error) {
   return true;
 }
 
-bool FlexQLServer::handleDelete(const QueryAST& ast, std::string& error) {
-  Table* table = nullptr;
+bool FlexQLServer::handleDelete(const QueryAST &ast, std::string &error) {
+  Table *table = nullptr;
   uint32_t table_id = 0;
   if (!resolveTable(ast.table_name, table, table_id)) {
     error = "unknown table: " + ast.table_name;
@@ -464,11 +497,12 @@ bool FlexQLServer::handleDelete(const QueryAST& ast, std::string& error) {
   return true;
 }
 
-bool FlexQLServer::flushPendingRows(QueryResultContext& qctx) {
+bool FlexQLServer::flushPendingRows(QueryResultContext &qctx) {
   if (qctx.pending_wire_buffer.empty()) {
     return true;
   }
-  const bool ok = writeAll(qctx.client_fd, qctx.pending_wire_buffer.data(), qctx.pending_wire_buffer.size());
+  const bool ok = writeAll(qctx.client_fd, qctx.pending_wire_buffer.data(),
+                           qctx.pending_wire_buffer.size());
   qctx.pending_wire_buffer.clear();
   if (!ok) {
     qctx.error = "failed to send row batch";
@@ -476,8 +510,9 @@ bool FlexQLServer::flushPendingRows(QueryResultContext& qctx) {
   return ok;
 }
 
-bool FlexQLServer::rowCallback(void* ctx, const RowValue* projected_values, size_t projected_count) {
-  auto* qctx = static_cast<QueryResultContext*>(ctx);
+bool FlexQLServer::rowCallback(void *ctx, const RowValue *projected_values,
+                               size_t projected_count) {
+  auto *qctx = static_cast<QueryResultContext *>(ctx);
   if (projected_count != qctx->projected_types.size()) {
     qctx->error = "projection type mismatch";
     return false;
@@ -498,7 +533,7 @@ bool FlexQLServer::rowCallback(void* ctx, const RowValue* projected_values, size
   const size_t frame_size = 5 + payload_len;
   const size_t old_size = qctx->pending_wire_buffer.size();
   qctx->pending_wire_buffer.resize(old_size + frame_size);
-  uint8_t* dest = qctx->pending_wire_buffer.data() + old_size;
+  uint8_t *dest = qctx->pending_wire_buffer.data() + old_size;
 
   const uint32_t net_len = htonl(static_cast<uint32_t>(payload_len));
   std::memcpy(dest, &net_len, sizeof(uint32_t));
@@ -532,7 +567,8 @@ bool FlexQLServer::rowCallback(void* ctx, const RowValue* projected_values, size
     }
   }
 
-  if (qctx->pending_wire_buffer.size() >= kRowBatchFlushBytes && !flushPendingRows(*qctx)) {
+  if (qctx->pending_wire_buffer.size() >= kRowBatchFlushBytes &&
+      !flushPendingRows(*qctx)) {
     return false;
   }
   qctx->rows_sent += 1;
@@ -548,7 +584,8 @@ bool FlexQLServer::rowCallback(void* ctx, const RowValue* projected_values, size
   return true;
 }
 
-bool FlexQLServer::handleSelect(const QueryAST& ast, int client_fd, std::string& error) {
+bool FlexQLServer::handleSelect(const QueryAST &ast, int client_fd,
+                                std::string &error) {
   QueryResultContext qctx{};
   qctx.client_fd = client_fd;
   qctx.aborted = false;
@@ -556,7 +593,7 @@ bool FlexQLServer::handleSelect(const QueryAST& ast, int client_fd, std::string&
   qctx.row_payload_buffer.reserve(1024);
   qctx.pending_wire_buffer.reserve(kRowBatchFlushBytes);
 
-  Table* table = nullptr;
+  Table *table = nullptr;
   uint32_t table_id = 0;
   if (!resolveTable(ast.table_name, table, table_id)) {
     error = "unknown table: " + ast.table_name;
@@ -570,14 +607,16 @@ bool FlexQLServer::handleSelect(const QueryAST& ast, int client_fd, std::string&
   }
   // Lazy B+ tree rebuild: only for WHERE queries that need the index.
   // Full table scans bypass the B+ tree entirely.
-  if (ast.where.has_value() && ast.where->col_index == 0 && ast.where->op_code == CompareOp::EQ) {
-    if (engine_.primaryKeyRuntimeEmpty(table_id) && table->storage->pageCount() > 0) {
+  if (ast.where.has_value() && ast.where->col_index == 0 &&
+      ast.where->op_code == CompareOp::EQ) {
+    if (engine_.primaryKeyRuntimeEmpty(table_id) &&
+        table->storage->pageCount() > 0) {
       engine_.warmupTableRuntimeFromDisk(*table, table_id);
     }
   }
 
   if (ast.join.has_value()) {
-    Table* right = nullptr;
+    Table *right = nullptr;
     uint32_t right_id = 0;
     if (!resolveTable(ast.join_table_name, right, right_id)) {
       error = "unknown join table: " + ast.join_table_name;
@@ -591,15 +630,19 @@ bool FlexQLServer::handleSelect(const QueryAST& ast, int client_fd, std::string&
     }
     qctx.projected_types.reserve(ast.join_projected.size());
     qctx.projected_names.reserve(ast.join_projected.size());
-    for (const ProjectionRef& p : ast.join_projected) {
+    for (const ProjectionRef &p : ast.join_projected) {
       if (p.table_side == TableSide::LEFT) {
-        qctx.projected_types.push_back(table->schema.columns[static_cast<size_t>(p.col_index)].type);
-        qctx.projected_names.push_back(table->name + "." +
-                                       table->schema.columns[static_cast<size_t>(p.col_index)].name);
+        qctx.projected_types.push_back(
+            table->schema.columns[static_cast<size_t>(p.col_index)].type);
+        qctx.projected_names.push_back(
+            table->name + "." +
+            table->schema.columns[static_cast<size_t>(p.col_index)].name);
       } else {
-        qctx.projected_types.push_back(right->schema.columns[static_cast<size_t>(p.col_index)].type);
-        qctx.projected_names.push_back(right->name + "." +
-                                       right->schema.columns[static_cast<size_t>(p.col_index)].name);
+        qctx.projected_types.push_back(
+            right->schema.columns[static_cast<size_t>(p.col_index)].type);
+        qctx.projected_names.push_back(
+            right->name + "." +
+            right->schema.columns[static_cast<size_t>(p.col_index)].name);
       }
     }
     if (!sendSchemaFrame(client_fd, qctx.projected_names)) {
@@ -608,7 +651,8 @@ bool FlexQLServer::handleSelect(const QueryAST& ast, int client_fd, std::string&
     }
 
     size_t matched_rows = 0;
-    if (!engine_.executeJoin(ast, *table, table_id, *right, right_id, &FlexQLServer::rowCallback, &qctx,
+    if (!engine_.executeJoin(ast, *table, table_id, *right, right_id,
+                             &FlexQLServer::rowCallback, &qctx,
                              &matched_rows)) {
       if (qctx.aborted) {
         return true;
@@ -630,8 +674,10 @@ bool FlexQLServer::handleSelect(const QueryAST& ast, int client_fd, std::string&
   qctx.projected_types.reserve(ast.projected_col_indices.size());
   qctx.projected_names.reserve(ast.projected_col_indices.size());
   for (int idx : ast.projected_col_indices) {
-    qctx.projected_types.push_back(table->schema.columns[static_cast<size_t>(idx)].type);
-    qctx.projected_names.push_back(table->schema.columns[static_cast<size_t>(idx)].name);
+    qctx.projected_types.push_back(
+        table->schema.columns[static_cast<size_t>(idx)].type);
+    qctx.projected_names.push_back(
+        table->schema.columns[static_cast<size_t>(idx)].name);
   }
   if (!sendSchemaFrame(client_fd, qctx.projected_names)) {
     error = "failed to send schema";
@@ -654,21 +700,25 @@ bool FlexQLServer::handleSelect(const QueryAST& ast, int client_fd, std::string&
 
     CollectRowsContext collect{};
     collect.projected_count = ast.projected_col_indices.size();
-    if (!engine_.execute(ast, *table, table_id, &collectRowsCallback, &collect, &matched_rows)) {
+    if (!engine_.execute(ast, *table, table_id, &collectRowsCallback, &collect,
+                         &matched_rows)) {
       error = "select execution failed";
       return false;
     }
 
     const ColType order_type =
-        table->schema.columns[static_cast<size_t>(*ast.order_by_col_index)].type;
+        table->schema.columns[static_cast<size_t>(*ast.order_by_col_index)]
+            .type;
     std::sort(collect.rows.begin(), collect.rows.end(),
-              [&](const std::vector<RowValue>& lhs, const std::vector<RowValue>& rhs) {
-                const int cmp = compareRowValue(order_type, lhs[static_cast<size_t>(projected_order_idx)],
-                                                rhs[static_cast<size_t>(projected_order_idx)]);
+              [&](const std::vector<RowValue> &lhs,
+                  const std::vector<RowValue> &rhs) {
+                const int cmp = compareRowValue(
+                    order_type, lhs[static_cast<size_t>(projected_order_idx)],
+                    rhs[static_cast<size_t>(projected_order_idx)]);
                 return ast.order_by_desc ? (cmp > 0) : (cmp < 0);
               });
 
-    for (const auto& row : collect.rows) {
+    for (const auto &row : collect.rows) {
       if (!rowCallback(&qctx, row.data(), row.size())) {
         if (qctx.aborted) {
           return true;
@@ -677,7 +727,8 @@ bool FlexQLServer::handleSelect(const QueryAST& ast, int client_fd, std::string&
         return false;
       }
     }
-  } else if (!engine_.execute(ast, *table, table_id, &FlexQLServer::rowCallback, &qctx, &matched_rows)) {
+  } else if (!engine_.execute(ast, *table, table_id, &FlexQLServer::rowCallback,
+                              &qctx, &matched_rows)) {
     if (qctx.aborted) {
       return true;
     }
@@ -695,7 +746,7 @@ bool FlexQLServer::handleSelect(const QueryAST& ast, int client_fd, std::string&
   return true;
 }
 
-bool FlexQLServer::execQuery(int client_fd, const std::string& sql) {
+bool FlexQLServer::execQuery(int client_fd, const std::string &sql) {
   std::string error;
   QueryAST ast{};
   const auto tables = snapshotTables();
@@ -732,25 +783,28 @@ bool FlexQLServer::persistCatalog() const {
   }
 
   std::lock_guard<std::mutex> lock(catalog_mutex_);
-  for (const auto& kv : table_ids_) {
-    const std::string& table_name = kv.first;
+  for (const auto &kv : table_ids_) {
+    const std::string &table_name = kv.first;
     const uint32_t table_id = kv.second;
-    Table* table = const_cast<Database&>(db_).getTable(table_name);
+    Table *table = const_cast<Database &>(db_).getTable(table_name);
     if (table == nullptr) {
       continue;
     }
     out << table_name << "|" << table_id << "|";
     for (size_t i = 0; i < table->schema.columns.size(); ++i) {
-      if (i > 0) out << ",";
-      out << table->schema.columns[i].name << ":" << colTypeToString(table->schema.columns[i].type);
+      if (i > 0)
+        out << ",";
+      out << table->schema.columns[i].name << ":"
+          << colTypeToString(table->schema.columns[i].type);
     }
     out << "\n";
 
     std::filesystem::create_directories("data/" + table_name);
-    std::ofstream schema_out("data/" + table_name + "/schema.txt", std::ios::trunc);
+    std::ofstream schema_out("data/" + table_name + "/schema.txt",
+                             std::ios::trunc);
     if (schema_out.good()) {
       schema_out << "table=" << table_name << "\n";
-      for (const auto& c : table->schema.columns) {
+      for (const auto &c : table->schema.columns) {
         schema_out << c.name << " " << colTypeToString(c.type) << "\n";
       }
     }
@@ -774,10 +828,12 @@ bool FlexQLServer::loadCatalog() {
   uint32_t max_id = 0;
   std::string line;
   while (std::getline(in, line)) {
-    if (line.empty()) continue;
+    if (line.empty())
+      continue;
 
     const size_t p1 = line.find('|');
-    const size_t p2 = (p1 == std::string::npos) ? std::string::npos : line.find('|', p1 + 1);
+    const size_t p2 =
+        (p1 == std::string::npos) ? std::string::npos : line.find('|', p1 + 1);
     if (p1 == std::string::npos || p2 == std::string::npos) {
       continue;
     }
@@ -797,11 +853,13 @@ bool FlexQLServer::loadCatalog() {
     std::string col_tok;
     while (std::getline(ss, col_tok, ',')) {
       const size_t c = col_tok.find(':');
-      if (c == std::string::npos) continue;
+      if (c == std::string::npos)
+        continue;
       const std::string col_name = col_tok.substr(0, c);
       const std::string col_type = col_tok.substr(c + 1);
       ColType t;
-      if (!stringToColType(col_type, t)) continue;
+      if (!stringToColType(col_type, t))
+        continue;
       schema.add_column(col_name, t);
     }
     if (schema.columns.empty()) {
@@ -811,7 +869,7 @@ bool FlexQLServer::loadCatalog() {
     if (!db_.createTable(table_name, schema)) {
       continue;
     }
-    Table* table = db_.getTable(table_name);
+    Table *table = db_.getTable(table_name);
     if (table == nullptr) {
       continue;
     }
@@ -821,6 +879,9 @@ bool FlexQLServer::loadCatalog() {
     }
     buffer_pool_.registerTable(table_id, table->storage.get());
     if (!engine_.warmupTableRuntimeFromDisk(*table, table_id)) {
+      return false;
+    }
+    if (!engine_.recoverTable(*table, table_id)) {
       return false;
     }
     if (table_id > max_id) {
@@ -862,7 +923,8 @@ void FlexQLServer::handleConnection(int client_fd) {
       continue;
     }
 
-    const std::string sql(reinterpret_cast<const char*>(payload.data()), payload.size());
+    const std::string sql(reinterpret_cast<const char *>(payload.data()),
+                          payload.size());
     if (!execQuery(client_fd, sql)) {
       break;
     }
@@ -871,4 +933,4 @@ void FlexQLServer::handleConnection(int client_fd) {
   ::close(client_fd);
 }
 
-}  // namespace flexql
+} // namespace flexql
