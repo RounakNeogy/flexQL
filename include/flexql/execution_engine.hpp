@@ -32,7 +32,7 @@ class ExecutionEngine {
   bool executeInsert(Table& table, uint32_t table_id, const Row& row);
   bool executeInsertBatch(Table& table, uint32_t table_id, std::vector<Row>& rows);
   bool executeBulkInsert(Table& table, uint32_t table_id, std::vector<Row>& rows);
-  bool executeSelectByPrimaryKey(Table& table, uint32_t table_id, int64_t pk, Row& out_row);
+  bool executeSelectByPrimaryKey(Table& table, uint32_t table_id, const RowValue& pk_val, Row& out_row);
   bool executeSelectAll(const QueryAST& ast,
                         Table& table,
                         uint32_t table_id,
@@ -116,7 +116,7 @@ class ExecutionEngine {
   void maybeEnableAdaptiveBulk(uint32_t table_id);
   bool writeBulkLoadWalMarker(const Table& table, size_t row_count);
   void buildPrimaryIndexOnePass(uint32_t table_id, ColType pk_type, const std::vector<Row>& rows);
-  bool selectFromDisk(Table& table, uint32_t table_id, int64_t pk, Row& out_row);
+  bool selectFromDisk(Table& table, uint32_t table_id, const RowValue& pk_val, Row& out_row);
   bool executeSelectScan(const QueryAST& ast,
                          Table& table,
                          uint32_t table_id,

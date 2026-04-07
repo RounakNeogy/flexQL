@@ -107,6 +107,7 @@ READLINE_FLAGS := $(shell \
 	elif [ -f /usr/local/opt/readline/lib/libreadline.dylib ]; then echo "-L/usr/local/opt/readline/lib -lreadline"; \
 	elif [ -f /usr/local/lib/libreadline.dylib ]; then echo "-L/usr/local/lib -lreadline"; \
 	elif [ -f /usr/lib/libedit.dylib ]; then echo "-ledit"; \
+	else echo "-lreadline"; \
 	fi)
 
 $(REPL_BIN): $(REPL_SRCS) | $(BUILD_DIR)

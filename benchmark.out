@@ -4,8 +4,8 @@ Running SQL subset checks plus multi-client insert/select/where benchmarks...
 Target insert rows: 10000000
 Client count: 4
 
-[PASS] CREATE TABLE BIG_USERS (0 ms)
-[PASS] DELETE BIG_USERS (119 ms)
+[PASS] CREATE TABLE BIG_USERS (1 ms)
+[PASS] DELETE BIG_USERS (1 ms)
 
 Starting multi-client insertion benchmark for 10000000 rows across 4 clients...
 Insert progress: 10% (1000000/10000000 rows)
@@ -20,12 +20,12 @@ Insert progress: 90% (9000000/10000000 rows)
 Insert progress: 100% (10000000/10000000 rows)
 [PASS] Multi-client INSERT benchmark complete
 Rows inserted: 10000000
-Elapsed: 4298 ms
-Throughput: 2326663 rows/sec
+Elapsed: 4742 ms
+Throughput: 2108814 rows/sec
 
 Starting multi-client SELECT benchmarks...
-[PASS] Multi-client SELECT benchmark (full table scan) | clients=4 | total_rows=40000000 | elapsed=18757 ms
-[PASS] Multi-client WHERE benchmark (primary key equality) | clients=4 | total_rows=4 | elapsed=12305 ms
+[PASS] Multi-client SELECT benchmark (full table scan) | clients=4 | total_rows=40000000 | elapsed=18319 ms
+[PASS] Multi-client WHERE benchmark (primary key equality) | clients=4 | total_rows=4 | elapsed=3697 ms
 
 [[...Running Unit Tests...]]
 

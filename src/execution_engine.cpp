@@ -426,25 +426,17 @@ bool ExecutionEngine::executeBulkInsert(Table& table, uint32_t table_id, std::ve
     return false;
   }
 
-  // Start from the current page if it has room
-  uint32_t page_id = table.current_page_id;
-  Page page;
-  bool have_current_page = false;
-
-  // Try to load the current page to see if there's room
-  if (table.storage->pageCount() > 0) {
-    if (table.storage->readPage(page_id, page)) {
-      if (page.free_space_offset + row_size <= kPageBodyBytes) {
-        have_current_page = true;
-      } else {
-        // Current page is full, start a new one
-        page_id = table.storage->pageCount();
-      }
-    }
+  uint32_t page_id = table.storage->pageCount();
+  if (table.current_page_id != UINT32_MAX) {
+    page_id = table.current_page_id;
   }
 
-  if (!have_current_page) {
-    // Initialize a fresh page
+  Page page{};
+  if (page_id < table.storage->pageCount()) {
+    if (!table.storage->readPage(page_id, page)) {
+      return false;
+    }
+  } else {
     page.page_id = page_id;
     page.row_count = 0;
     page.free_space_offset = 0;
@@ -578,6 +570,12 @@ void ExecutionEngine::resetTableRuntime(uint32_t table_id) {
 bool ExecutionEngine::warmupTableRuntimeFromDisk(Table& table, uint32_t table_id) {
   DebugLockLevelGuard table_level(LockLevel::TABLE_RW);
   std::unique_lock<std::shared_mutex> table_lock(table.rw_lock);
+
+  // Re-check under lock to avoid thundering herd / redundant warmups
+  if (!primaryKeyRuntimeEmpty(table_id) || table.storage->pageCount() == 0) {
+    return true;
+  }
+
   resetTableRuntime(table_id);
 
   const std::vector<size_t> col_offsets = buildColumnOffsets(table);
@@ -624,9 +622,10 @@ bool ExecutionEngine::warmupTableRuntimeFromDisk(Table& table, uint32_t table_id
   return true;
 }
 
-bool ExecutionEngine::selectFromDisk(Table& table, uint32_t table_id, int64_t pk, Row& out_row) {
+bool ExecutionEngine::selectFromDisk(Table& table, uint32_t table_id, const RowValue& pk_val, Row& out_row) {
   const uint32_t page_count = table.storage->pageCount();
   const size_t pk_offset = kRowHeaderAlignedBytes;
+  const ColType pk_type = table.schema.columns[0].type;
 
   for (uint32_t page_id = 0; page_id < page_count; ++page_id) {
     BufferFrame* frame = buffer_pool_.fetchPage(table_id, page_id);
@@ -643,9 +642,9 @@ bool ExecutionEngine::selectFromDisk(Table& table, uint32_t table_id, int64_t pk
         continue;
       }
 
-      int64_t row_pk = 0;
-      std::memcpy(&row_pk, row_ptr + pk_offset, sizeof(int64_t));
-      if (row_pk != pk) {
+      RowValue row_pk{};
+      readColumnValue(row_ptr, pk_offset, pk_type, row_pk);
+      if (!compareValues(CompareOp::EQ, pk_type, row_pk, pk_val)) {
         continue;
       }
 
@@ -661,13 +660,13 @@ bool ExecutionEngine::selectFromDisk(Table& table, uint32_t table_id, int64_t pk
   return false;
 }
 
-bool ExecutionEngine::executeSelectByPrimaryKey(Table& table, uint32_t table_id, int64_t pk, Row& out_row) {
+bool ExecutionEngine::executeSelectByPrimaryKey(Table& table, uint32_t table_id, const RowValue& pk_val, Row& out_row) {
   DebugLockLevelGuard table_level(LockLevel::TABLE_RW);
   std::shared_lock<std::shared_mutex> table_lock(table.rw_lock);
 
   TableRuntime& state = stateFor(table_id);
-  const RowValue pk_val = RowValue::from_int(pk);
-  const int64_t encoded = static_cast<int64_t>(encodePrimaryKey(table.schema.columns[0].type, pk_val));
+  const ColType pk_type = table.schema.columns[0].type;
+  const int64_t encoded = static_cast<int64_t>(encodePrimaryKey(pk_type, pk_val));
 
   if (state.insert_buffer.findByPrimaryKey(encoded, out_row)) {
     return true;
@@ -680,7 +679,8 @@ bool ExecutionEngine::executeSelectByPrimaryKey(Table& table, uint32_t table_id,
   }
 
   RecordPointer rp{};
-  if (state.bplus_tree.search(encoded, rp, nullptr)) {
+  const RowValue::VarcharValue* raw_varchar = (pk_type == ColType::VARCHAR) ? &pk_val.as_varchar : nullptr;
+  if (state.bplus_tree.search(encoded, rp, raw_varchar)) {
     BufferFrame* frame = buffer_pool_.fetchPage(table_id, rp.page_id);
     if (frame == nullptr) {
       return false;
@@ -691,7 +691,7 @@ bool ExecutionEngine::executeSelectByPrimaryKey(Table& table, uint32_t table_id,
     return ok;
   }
 
-  return selectFromDisk(table, table_id, pk, out_row);
+  return selectFromDisk(table, table_id, pk_val, out_row);
 }
 
 bool ExecutionEngine::primaryKeyExists(Table& table, uint32_t table_id, const RowValue& pk_value) {
@@ -710,7 +710,12 @@ bool ExecutionEngine::primaryKeyExists(Table& table, uint32_t table_id, const Ro
 
   RecordPointer rp{};
   const RowValue::VarcharValue* raw_varchar = (pk_type == ColType::VARCHAR) ? &pk_value.as_varchar : nullptr;
-  return state.bplus_tree.search(encoded, rp, raw_varchar);
+  if (state.bplus_tree.search(encoded, rp, raw_varchar)) {
+    return true;
+  }
+
+  Row tmp_row;
+  return selectFromDisk(table, table_id, pk_value, tmp_row);
 }
 
 bool ExecutionEngine::hasPendingWrites(uint32_t table_id) {
